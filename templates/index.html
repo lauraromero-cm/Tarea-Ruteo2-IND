@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resiliencia Internet Chilena - M8.8</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root{ --bg:#0f1420; --panel:#171e2e; --ink:#e8edf6; --mut:#9aa7bd; --line:#2a3550 }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  #map{position:absolute;inset:0}
+
+  .panel{position:absolute;top:12px;right:12px;z-index:1000;width:340px;max-width:calc(100vw - 24px);
+         background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;
+         box-shadow:0 8px 30px rgba(0,0,0,.45);max-height:calc(100vh - 24px);overflow-y:auto}
+  .panel h1{font-size:16px;margin:0 0 2px;font-weight:700}
+  .panel .sub{color:var(--mut);font-size:12px;margin-bottom:12px}
+
+  .headline{background:#0f1626;border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:12px}
+  .headline .hl-k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .headline .hl-v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:3px}
+  .headline .arrow{color:var(--mut);margin:0 2px}
+  .chip{font-size:12px;font-weight:700;color:#ff6b6b;background:rgba(255,107,107,.12);
+        padding:2px 8px;border-radius:20px;margin-left:6px;vertical-align:middle}
+
+  .tbl-legend{display:flex;gap:12px;font-size:11px;color:var(--mut);margin-bottom:6px}
+  .tbl-legend .dot{display:inline-block;width:8px;height:8px;border-radius:50%;vertical-align:middle;margin-right:3px}
+
+  .ctab{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px}
+  .ctab th{color:var(--mut);font-weight:500;text-align:right;padding:5px 6px;border-bottom:1px solid var(--line)}
+  .ctab th:first-child{text-align:left}
+  .ctab td{padding:5px 6px;font-variant-numeric:tabular-nums;text-align:right;border-bottom:1px solid rgba(42,53,80,.4)}
+  .ctab td:first-child{text-align:left;font-weight:500}
+  .ctab tr:last-child td{border-bottom:none}
+  .ctab .v-danger{color:#ff6b6b}
+  .ctab .v-warn{color:#f0ad4e}
+  .ctab .v-safe{color:#2ecc71}
+
+  .delta{color:#ff6b6b}
+  .note{color:var(--mut);font-size:11px;margin-top:10px;line-height:1.45}
+
+  .legend{position:absolute;bottom:14px;left:14px;z-index:1000;background:var(--panel);
+          border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12px}
+  .legend .row{display:flex;align-items:center;gap:8px;margin:3px 0}
+  .sw{width:22px;height:4px;border-radius:2px;display:inline-block}
+  a{color:#7db3ff}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="panel">
+  <h1>Resiliencia de la Internet chilena</h1>
+  <div class="sub">Terremoto M8.8 Maule (2010) &middot; ATTR de los nodos clave</div>
+
+  <div class="headline" id="headline">
+    <div class="hl-k">ATTR de la red <span style="font-weight:400;text-transform:none;letter-spacing:0">&mdash; conectividad interna promedio de las sub-redes (1.0 = intacta)</span></div>
+    <div class="hl-v"><span id="ra">&ndash;</span> <span class="arrow">&rarr;</span> <span id="rd">&ndash;</span>
+      <span class="chip" id="rc">&ndash;</span></div>
+  </div>
+
+  <div class="tbl-legend">
+    <span><span class="dot" style="background:#ff6b6b"></span>destruida</span>
+    <span><span class="dot" style="background:#2ecc71"></span>intacta</span>
+  </div>
+  <table class="ctab" id="ctab">
+    <thead><tr><th>Sub-red</th><th>daño</th><th>antes</th><th>después</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="note" id="resumen"></div>
+</div>
+
+<div class="legend">
+  <div style="font-weight:600;margin-bottom:4px">Probabilidad de falla</div>
+  <div class="row"><span class="sw" style="background:#2ecc71"></span> baja (&lt; 5%)</div>
+  <div class="row"><span class="sw" style="background:#f1c40f"></span> media (5–20%)</div>
+  <div class="row"><span class="sw" style="background:#e67e22"></span> alta (20–40%)</div>
+  <div class="row"><span class="sw" style="background:#e74c3c"></span> muy alta (&gt; 40%)</div>
+  <div class="row" style="margin-top:6px">
+    <span class="sw" style="background:#ff2d55;height:10px;border-radius:50%;width:10px"></span> epicentro &middot;
+    <span class="sw" style="background:#4da3ff;height:10px;border-radius:50%;width:10px"></span> nodo clave
+  </div>
+</div>
+
+<script>
+const map = L.map('map',{zoomControl:true}).setView([-37,-72],4);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  {attribution:'&copy; OpenStreetMap', maxZoom:19}).addTo(map);
+
+function colorFail(p){
+  if(p>0.4) return '#e74c3c';
+  if(p>0.2) return '#e67e22';
+  if(p>0.05) return '#f1c40f';
+  return '#2ecc71';
+}
+
+fetch('/api/edges').then(r=>r.json()).then(gj=>{
+  L.geoJSON(gj,{
+    style:f=>({color:colorFail(f.properties.p_fail), weight:f.properties.p_fail>0.05?2.4:1.3,
+               opacity:f.properties.p_fail>0.05?0.95:0.6}),
+    onEachFeature:(f,l)=>l.bindPopup(
+      `<b>Enlace #${f.properties.id}</b> (${f.properties.tipo})<br>`+
+      `Dist. epicentro: ${f.properties.dist_epi_km} km<br>`+
+      `P(falla) = <b>${f.properties.p_fail}</b>`)
+  }).addTo(map);
+});
+
+fetch('/api/nodos').then(r=>r.json()).then(gj=>{
+  L.geoJSON(gj,{
+    pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:5,color:'#fff',weight:1,
+        fillColor:'#4da3ff',fillOpacity:0.95}),
+    onEachFeature:(f,l)=>l.bindPopup(
+      `<b>${f.properties.nombre}</b> (${f.properties.cod})<br>rol: ${f.properties.rol}`)
+  }).addTo(map);
+});
+
+fetch('/api/sismo').then(r=>r.json()).then(gj=>{
+  const f = gj.features[0]; if(!f) return;
+  const c = [f.geometry.coordinates[1], f.geometry.coordinates[0]];
+  [60,150,250].forEach((km,i)=>{
+    L.circle(c,{radius:km*1000,color:'#ff2d55',weight:1,opacity:.5-i*.12,
+               fill:true,fillColor:'#ff2d55',fillOpacity:.06}).addTo(map)
+      .bindTooltip(`~${km} km`,{permanent:false});
+  });
+  L.circleMarker(c,{radius:8,color:'#fff',weight:2,fillColor:'#ff2d55',fillOpacity:1})
+    .addTo(map).bindPopup(`<b>${f.properties.lugar}</b><br>Mw ${f.properties.mag}, `+
+      `prof. ${f.properties.depth_km} km<br>${f.properties.fecha}`);
+});
+
+fetch('/api/attr').then(r=>r.json()).then(d=>{
+  if(d.error){document.getElementById('resumen').textContent=d.error;return;}
+  const g=id=>document.getElementById(id);
+  const R=d.ATTR_RED;
+  g('ra').textContent=R.antes.toFixed(2);
+  g('rd').textContent=R.despues.toFixed(2);
+  g('rc').textContent='−'+R.caida_relativa_pct+'%';
+
+  const tb=document.querySelector('#ctab tbody'); tb.innerHTML='';
+  d.ATTR_POR_COMPONENTE.filter(r=>r.nodos_clave.length).forEach(r=>{
+    const a=r.attr_despues, pf=r.p_fail_prom||0;
+    const cls = a<0.2?'v-danger':a<0.8?'v-warn':'v-safe';
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${r.nodos_clave.join(', ')}</td>`+
+                 `<td>${(pf*100).toFixed(1)}%</td>`+
+                 `<td>${r.attr_antes.toFixed(2)}</td>`+
+                 `<td class="${cls}">${r.attr_despues.toFixed(2)}</td>`;
+    tb.appendChild(tr);
+  });
+
+  g('resumen').innerHTML=
+    `Cada sub-red se evalúa como un sistema independiente (ATTR = 1.0 si todos sus nodos permanecen conectados). `+
+    `El terremoto M8.8 destruye la conectividad de las sub-redes cercanas al epicentro `+
+    `(<b>Concepción–Chillán</b> y <b>Talca</b>, ATTR → <b class="delta">0</b>), `+
+    `mientras las más alejadas permanecen intactas. `+
+    `El ATTR de la red es el promedio ponderado por cantidad de nodos (${d.trials_montecarlo} iteraciones Monte Carlo).`;
+});
+</script>
+</body>
+</html>

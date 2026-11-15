@@ -1,0 +1,10 @@
+services:
+  app:
+    build:
+      context: .
+      network: host
+    network_mode: host
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      APP_PORT: 5000
