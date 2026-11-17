@@ -22,7 +22,7 @@ web en **Leaflet**.
 | `shp/trayecto_en_ferry.*` | Enlaces marítimos en ferry (operación) |
 | `sismo_maule_2010.geojson` | Sismo M8.8 Maule, descargado de **USGS** |
 
-## Uso rápido (Docker)
+## Uso rápido (Docker) — recomendado
 
 ```bash
 docker compose up --build
@@ -33,12 +33,39 @@ Esto levanta PostgreSQL + PostGIS + pgRouting, construye la BD, calcula el ATTR
 y sirve el mapa web, todo en un solo contenedor. El puerto se puede cambiar con
 `APP_PORT` en `docker-compose.yml`.
 
+Esta es la forma más simple y portable de compilar el proyecto: el contenedor
+crea su propio PostgreSQL con autenticación `trust` (sin contraseña) y corre
+automáticamente `main.py initdb` + `main.py attr` + `main.py serve`, sin
+depender de qué tenga instalado o configurado el host. Use la sección
+siguiente ("sin Docker") solo si no puede usar Docker.
+
+> Si el host ya tiene un PostgreSQL propio corriendo en el puerto 5432 (por
+> ejemplo, una instalación nativa para la sección "sin Docker"), no hay
+> conflicto: el contenedor solo expone el puerto web (`APP_PORT`, 5000 por
+> defecto) y su PostgreSQL interno queda aislado dentro del contenedor.
+
 ## Uso local (sin Docker)
 
+Pensado para una instalación nativa de PostgreSQL (ej. Debian/Kali: paquetes
+`postgresql`, `postgresql-postgis`, `postgresql-<version>-pgrouting`).
+
 ```bash
-# 0) configurar conexión (ajuste a su instalación)
-export RESIL_DSN="host=localhost port=5432 user=postgres dbname=resiliencia"
-export RESIL_ADMIN_DSN="host=localhost port=5432 user=postgres dbname=postgres"
+# 1) instalar dependencias del sistema (Debian/Kali/Ubuntu)
+sudo apt install postgresql postgresql-postgis postgresql-pgrouting
+
+# 2) levantar el servicio (si no está corriendo)
+sudo service postgresql start
+pg_lsclusters              # confirma el puerto del cluster (por defecto 5432)
+
+# 3) definir una contraseña para el rol postgres (una sola vez por instalación)
+sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+
+# 4) instalar dependencias de Python
+pip install -r requirements.txt
+
+# 5) configurar conexión (ajuste host/puerto si su instalación difiere)
+export RESIL_DSN="host=localhost port=5432 user=postgres password=postgres dbname=resiliencia"
+export RESIL_ADMIN_DSN="host=localhost port=5432 user=postgres password=postgres dbname=postgres"
 
 # Todo de corrido:
 python main.py all           # initdb + attr + serve
@@ -48,6 +75,9 @@ python main.py initdb        # construir la BD
 python main.py attr -n 5000  # calcular ATTR (Monte Carlo)
 python main.py serve         # mapa web en http://127.0.0.1:5000
 ```
+
+> Nota: `main.py` lee el password del DSN y lo pasa a `psql` vía `PGPASSWORD`
+> automáticamente; no es necesario configurar `~/.pgpass`.
 
 ## Estructura
 
@@ -87,5 +117,4 @@ codigo-t2/
 - Indicador graduado (conectividad de pares de nodos clave): **0.047 antes →
   0.042 después** del sismo, es decir una **caída ~11%** por el terremoto.
 
-Ver `docs/INFORME.md` para el detalle.
 # Tarea-Ruteo2-IND

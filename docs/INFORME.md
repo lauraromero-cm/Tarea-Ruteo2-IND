@@ -177,7 +177,29 @@ denuncia.
 - los **nodos clave**, y
 - un panel con los **ATTR antes/después**.
 
-## 9. Limitaciones
+## 9. Reproducibilidad
+
+La forma recomendada de compilar el proyecto es **Docker**:
+
+```bash
+docker compose up --build
+```
+
+El contenedor levanta su propio PostgreSQL con autenticación `trust` (sin
+contraseña), corre `main.py initdb` + `main.py attr` y sirve el mapa, todo con
+un solo comando — no requiere instalar PostgreSQL/PostGIS/pgRouting en el host
+ni configurar manualmente usuarios o contraseñas. Ver sección *Uso rápido
+(Docker)* del `README.md`.
+
+**Bug corregido (PostGIS ≥ 3.5 vs. `shp2pgsql -d`):** al cargar los
+shapefiles, la bandera `-d` de `shp2pgsql` genera una llamada a
+`DropGeometryColumn` antes de crear la tabla. En PostGIS 3.5+ esa función
+lanza un `ERROR` (antes solo era un `NOTICE`) cuando la tabla todavía no
+existe, lo que rompía la carga en instalaciones nuevas. Se corrigió en
+`main.py` (`initdb`) haciendo `DROP TABLE IF EXISTS ... CASCADE` antes de cada
+capa y usando `shp2pgsql -c` (crear) en vez de `-d`.
+
+## 10. Limitaciones
 
 - Los `id` de los shapefiles no son únicos ni describen operador/capacidad; el
   modelo se apoya en la geometría.

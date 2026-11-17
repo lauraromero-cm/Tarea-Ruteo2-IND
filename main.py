@@ -51,14 +51,23 @@ def _psql_args(dsn):
     if "dbname" in kv: args += ["-d", kv["dbname"]]
     return args
 
+def _psql_env(dsn):
+    """Si el DSN trae password=..., se lo pasa a psql via PGPASSWORD
+    (psql no acepta la password como argumento de linea de comando)."""
+    kv = dict(tok.split("=", 1) for tok in dsn.split())
+    env = os.environ.copy()
+    if "password" in kv:
+        env["PGPASSWORD"] = kv["password"]
+    return env
+
 def run_sql_file(path, dsn=DSN):
     print(f"  -> {os.path.basename(path)}")
     subprocess.run(["psql", *_psql_args(dsn), "-q", "-v", "ON_ERROR_STOP=1",
-                    "-f", path], check=True)
+                    "-f", path], env=_psql_env(dsn), check=True)
 
 def run_sql(sql, dsn=DSN):
     subprocess.run(["psql", *_psql_args(dsn), "-q", "-v", "ON_ERROR_STOP=1",
-                    "-c", sql], check=True)
+                    "-c", sql], env=_psql_env(dsn), check=True)
 
 # ---------------------------------------------------------------- initdb
 def initdb():
@@ -73,10 +82,14 @@ def initdb():
     print("[2/7] Cargando shapefiles con shp2pgsql...")
     for lyr in LAYERS:
         shp = os.path.join(SHPDIR, lyr + ".shp")
-        sqlgen = subprocess.run(["shp2pgsql", "-I", "-s", "4326", "-d", shp, lyr],
+        # Se dropea la tabla aparte (en vez de usar "-d" de shp2pgsql) porque
+        # en PostGIS >= 3.5 el DropGeometryColumn que genera "-d" lanza error
+        # si la tabla todavia no existe.
+        run_sql(f'DROP TABLE IF EXISTS "{lyr}" CASCADE;')
+        sqlgen = subprocess.run(["shp2pgsql", "-I", "-s", "4326", "-c", shp, lyr],
                                 capture_output=True, text=True, check=True)
         p = subprocess.run(["psql", *_psql_args(DSN), "-q", "-v", "ON_ERROR_STOP=1"],
-                           input=sqlgen.stdout, text=True)
+                           input=sqlgen.stdout, text=True, env=_psql_env(DSN))
         if p.returncode != 0:
             sys.exit(f"Fallo cargando {lyr}")
         print(f"  -> {lyr}")

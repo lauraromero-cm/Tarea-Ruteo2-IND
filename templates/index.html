@@ -138,7 +138,9 @@ fetch('/api/attr').then(r=>r.json()).then(d=>{
   g('rc').textContent='−'+R.caida_relativa_pct+'%';
 
   const tb=document.querySelector('#ctab tbody'); tb.innerHTML='';
-  d.ATTR_POR_COMPONENTE.filter(r=>r.nodos_clave.length).forEach(r=>{
+  d.ATTR_POR_COMPONENTE.filter(r=>r.nodos_clave.length)
+    .sort((a,b)=>a.attr_despues-b.attr_despues)
+    .forEach(r=>{
     const a=r.attr_despues, pf=r.p_fail_prom||0;
     const cls = a<0.2?'v-danger':a<0.8?'v-warn':'v-safe';
     const tr=document.createElement('tr');
