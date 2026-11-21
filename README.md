@@ -23,12 +23,12 @@ antes y después del terremoto **M8.8 del Maule (2010)**, y visualización web e
 | `shp/trayecto_en_ferry.*` | Enlaces marítimos en ferry (operación) |
 | `sismo_maule_2010.geojson` | Sismo M8.8 Maule, descargado de **USGS** |
 
-## Dos formas de ejecutar (elige una)
+## Dos formas de ejecutar 
 
 | Opción | Cuándo usarla | Comando |
 |---|---|---|
 | **A. Local (`main.py`)** (recomendada) | Tienes PostgreSQL+PostGIS+pgRouting | `python3 main.py all` (ver pasos abajo) |
-| **B. Docker** (alternativa) | No quieres instalar nada en el host | `docker compose up --build` |
+| **B. Docker** (alternativa) | No quieres instalar nada en el host | `sudo docker compose up --build` |
 
 Ambas construyen la BD, calculan los ATTR (antes y después) y levantan el mapa
 en `http://localhost:5000`. **La vía recomendada y verificada es `main.py`**: un
@@ -75,21 +75,6 @@ si la instalación difiere, se configuran `RESIL_DSN` y `RESIL_ADMIN_DSN`.
 Los valores que produce el script son **deterministas** (semilla fija por
 componente) y coinciden con los reportados en el informe.
 
-## Cargar solo `main.sql` (entregable autocontenido)
-
-`main.sql` es **autocontenido**: carga en una **base de datos vacía** toda la
-infraestructura (topología de red con geometría) junto con la **probabilidad de
-falla `p_fail` de cada enlace** ante el sismo M8.8. No requiere los shapefiles
-ni ejecutar `main.py`:
-
-```bash
-createdb -h localhost -p 5432 -U postgres resiliencia_main
-psql     -h localhost -p 5432 -U postgres -d resiliencia_main -f main.sql
-```
-
-Incluye las extensiones (PostGIS + pgRouting), las funciones del modelo de falla
-(`norm_cdf`, `pga_campbell`) y las tablas `edges`, `edges_vertices_pgr`,
-`nodos_clave`, `sismo`, `modelo_param` y `edge_failure` con sus datos.
 
 ## Opción B — Docker (alternativa)
 
@@ -155,5 +140,4 @@ codigo-t2/
 - **ATTR estricto (all-terminal) = 0** ya en operación (los 19 nodos clave no
   están todos en una misma componente ⇒ la red no es resiliente ni sin sismo).
 
-Detalle completo de metodología, parámetros y referencias en
-[`docs/informe-final.tex`](docs/informe-final.tex).
+Detalle completo de metodología, parámetros y referencias en el informe entregado.
