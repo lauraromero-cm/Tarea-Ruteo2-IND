@@ -120,9 +120,7 @@ codigo-t2/
 ├── data/
 │   ├── shp/                  Shapefiles de infraestructura (fibra, postación, camino, ferry)
 │   └── sismo_maule_2010.geojson
-├── material/                 Material de referencia (estudios CORFO/SUBTEL)
-└── docs/
-    └── informe-final.tex     Informe LaTeX (entregable)
+└── material/                 Material de referencia (estudios CORFO/SUBTEL)
 ```
 
 ## Resultado (resumen)
