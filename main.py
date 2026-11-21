@@ -17,7 +17,7 @@ Uso:
   python main.py all           # initdb + attr + serve
 
 Conexion: variable de entorno RESIL_DSN
-  (por defecto: host=/tmp port=5433 user=postgres dbname=resiliencia)
+  (por defecto: host=localhost port=5432 user=postgres password=postgres dbname=resiliencia)
 """
 import os, sys, json, subprocess, argparse
 import psycopg2
@@ -25,14 +25,18 @@ import psycopg2
 HERE = os.path.dirname(os.path.abspath(__file__))
 SQLDIR = os.path.join(HERE, "sql")
 SHPDIR = os.path.join(HERE, "data", "shp")
+GEOJSON_SISMO = os.path.join(HERE, "data", "sismo_maule_2010.geojson")
 
 DBNAME = os.environ.get("RESIL_DB", "resiliencia")
-# DSN para conectarse a la BD del proyecto
+# DSN para conectarse a la BD del proyecto. Por defecto apunta a una instalacion
+# estandar (localhost:5432, rol postgres con password 'postgres' segun el README),
+# de modo que `python3 main.py all` funcione desde un clon limpio sin exportar
+# variables. Se puede sobreescribir con la variable de entorno RESIL_DSN.
 DSN = os.environ.get("RESIL_DSN",
-    f"host=/tmp port=5433 user=postgres dbname={DBNAME}")
+    f"host=localhost port=5432 user=postgres password=postgres dbname={DBNAME}")
 # DSN de mantenimiento (para crear la BD) -> misma conexion pero db 'postgres'
 ADMIN_DSN = os.environ.get("RESIL_ADMIN_DSN",
-    "host=/tmp port=5433 user=postgres dbname=postgres")
+    "host=localhost port=5432 user=postgres password=postgres dbname=postgres")
 
 LAYERS = [
     "fibra_optica_detectada",
@@ -69,6 +73,24 @@ def run_sql(sql, dsn=DSN):
     subprocess.run(["psql", *_psql_args(dsn), "-q", "-v", "ON_ERROR_STOP=1",
                     "-c", sql], env=_psql_env(dsn), check=True)
 
+# ---------------------------------------------------------------- sismo
+def cargar_sismo():
+    """Carga el epicentro PARSEANDO el GeoJSON del USGS (no se escriben las
+    coordenadas a mano):
+      1. 04_sismo.sql crea la tabla 'sismo' y la staging 'sismo_geojson'.
+      2. Se lee el archivo data/sismo_maule_2010.geojson y se inserta su
+         contenido CRUDO en 'sismo_geojson' (jsonb).
+      3. 04b_sismo_extract.sql extrae id/mag/profundidad/fecha/coordenadas con
+         operadores jsonb y la geometria con ST_GeomFromGeoJSON (PostGIS)."""
+    run_sql_file(os.path.join(SQLDIR, "04_sismo.sql"))
+    with open(GEOJSON_SISMO, encoding="utf-8") as f:
+        doc = f.read()
+    con = psycopg2.connect(DSN); cur = con.cursor()
+    cur.execute("DELETE FROM sismo_geojson")
+    cur.execute("INSERT INTO sismo_geojson(doc) VALUES (%s)", (doc,))
+    con.commit(); con.close()
+    run_sql_file(os.path.join(SQLDIR, "04b_sismo_extract.sql"))
+
 # ---------------------------------------------------------------- initdb
 def initdb():
     print("[1/7] Creando base de datos y extensiones...")
@@ -98,11 +120,13 @@ def initdb():
     run_sql_file(os.path.join(SQLDIR, "02_topologia.sql"))
     print("[4/7] Identificando nodos clave...")
     run_sql_file(os.path.join(SQLDIR, "03_nodos_clave.sql"))
-    print("[5/7] Cargando sismo M8.8...")
-    run_sql_file(os.path.join(SQLDIR, "04_sismo.sql"))
-    print("[6/7] Aplicando modelo de falla...")
+    print("[5/7] Cargando sismo M8.8 desde GeoJSON (USGS)...")
+    cargar_sismo()
+    print("[6/7] Aplicando modelo de falla (probabilidades por enlace)...")
     run_sql_file(os.path.join(SQLDIR, "05_modelo_falla.sql"))
-    print("[7/7] (main.sql materializa las probabilidades; ya calculadas)")
+    print("[7/7] Probabilidades calculadas en vivo en la BD.")
+    print("      (main.sql es el entregable autocontenido equivalente: la misma")
+    print("       infraestructura + probabilidades, cargable en una BD vacia.)")
     print("Base de datos construida OK.")
 
 # ---------------------------------------------------------------- attr
@@ -144,6 +168,16 @@ def serve(host="127.0.0.1", port=5000):
                     'p_fail', round(COALESCE(p_fail,0)::numeric,4),
                     'dist_epi_km', round(COALESCE(dist_epi_km,0)::numeric,1)))
             FROM edges WHERE operativo"""))
+
+    @app.route("/api/edges_sinteticos")
+    def api_edges_sinteticos():
+        return jsonify(q_geojson("""
+            SELECT jsonb_build_object(
+                'type','Feature',
+                'geometry', ST_AsGeoJSON(geom)::jsonb,
+                'properties', jsonb_build_object(
+                    'id', id, 'tipo', tipo))
+            FROM edges WHERE NOT operativo"""))
 
     @app.route("/api/nodos")
     def api_nodos():

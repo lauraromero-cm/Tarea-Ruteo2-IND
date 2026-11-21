@@ -53,10 +53,10 @@
 
 <div class="panel">
   <h1>Resiliencia de la Internet chilena</h1>
-  <div class="sub">Terremoto M8.8 Maule (2010) &middot; ATTR de los nodos clave</div>
+  <div class="sub">Terremoto M8.8 Maule (2010) &middot; ATTR (fiabilidad promedio de dos terminales)</div>
 
   <div class="headline" id="headline">
-    <div class="hl-k">ATTR de la red <span style="font-weight:400;text-transform:none;letter-spacing:0">&mdash; conectividad interna promedio de las sub-redes (1.0 = intacta)</span></div>
+    <div class="hl-k">ATTR de la red <span style="font-weight:400;text-transform:none;letter-spacing:0">&mdash; fracci&oacute;n promedio de pares de nodos conectados dentro de cada sub-red (1.0 = intacta)</span></div>
     <div class="hl-v"><span id="ra">&ndash;</span> <span class="arrow">&rarr;</span> <span id="rd">&ndash;</span>
       <span class="chip" id="rc">&ndash;</span></div>
   </div>
@@ -78,6 +78,7 @@
   <div class="row"><span class="sw" style="background:#f1c40f"></span> media (5–20%)</div>
   <div class="row"><span class="sw" style="background:#e67e22"></span> alta (20–40%)</div>
   <div class="row"><span class="sw" style="background:#e74c3c"></span> muy alta (&gt; 40%)</div>
+  <div class="row"><span class="sw" style="background:#9b59b6;border-top:2px dashed #9b59b6;height:0;width:22px"></span> sintético (no operativo)</div>
   <div class="row" style="margin-top:6px">
     <span class="sw" style="background:#ff2d55;height:10px;border-radius:50%;width:10px"></span> epicentro &middot;
     <span class="sw" style="background:#4da3ff;height:10px;border-radius:50%;width:10px"></span> nodo clave
@@ -104,6 +105,15 @@ fetch('/api/edges').then(r=>r.json()).then(gj=>{
       `<b>Enlace #${f.properties.id}</b> (${f.properties.tipo})<br>`+
       `Dist. epicentro: ${f.properties.dist_epi_km} km<br>`+
       `P(falla) = <b>${f.properties.p_fail}</b>`)
+  }).addTo(map);
+});
+
+fetch('/api/edges_sinteticos').then(r=>r.json()).then(gj=>{
+  L.geoJSON(gj,{
+    style:()=>({color:'#9b59b6', weight:1.5, opacity:0.7, dashArray:'6 4'}),
+    onEachFeature:(f,l)=>l.bindPopup(
+      `<b>Enlace #${f.properties.id}</b> (${f.properties.tipo})<br>`+
+      `<i>Infraestructura potencial (no operativo)</i>`)
   }).addTo(map);
 });
 
@@ -145,18 +155,18 @@ fetch('/api/attr').then(r=>r.json()).then(d=>{
     const cls = a<0.2?'v-danger':a<0.8?'v-warn':'v-safe';
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${r.nodos_clave.join(', ')}</td>`+
-                 `<td>${(pf*100).toFixed(1)}%</td>`+
-                 `<td>${r.attr_antes.toFixed(2)}</td>`+
-                 `<td class="${cls}">${r.attr_despues.toFixed(2)}</td>`;
+                 `<td>${(pf*100).toFixed(2)}%</td>`+
+                 `<td>${r.attr_antes.toFixed(3)}</td>`+
+                 `<td class="${cls}">${r.attr_despues.toFixed(3)}</td>`;
     tb.appendChild(tr);
   });
 
   g('resumen').innerHTML=
-    `Cada sub-red se evalúa como un sistema independiente (ATTR = 1.0 si todos sus nodos permanecen conectados). `+
-    `El terremoto M8.8 destruye la conectividad de las sub-redes cercanas al epicentro `+
-    `(<b>Concepción–Chillán</b> y <b>Talca</b>, ATTR → <b class="delta">0</b>), `+
+    `ATTR = fiabilidad promedio de dos terminales: fracción de pares de nodos que siguen conectados (Boettcher et al., IEEE 2018). `+
+    `Cada sub-red parte intacta (ATTR = 1.0); el M8.8 degrada fuertemente las sub-redes del epicentro `+
+    `(<b>Talca</b> ATTR → <b class="delta">0.17</b>, <b>Concepción–Chillán</b> → <b class="delta">0.43</b>), `+
     `mientras las más alejadas permanecen intactas. `+
-    `El ATTR de la red es el promedio ponderado por cantidad de nodos (${d.trials_montecarlo} iteraciones Monte Carlo).`;
+    `El ATTR de la red es el promedio ponderado por cantidad de nodos (${(d.trials_componente||d.trials_montecarlo).toLocaleString('es')} iteraciones Monte Carlo por sub-red).`;
 });
 </script>
 </body>

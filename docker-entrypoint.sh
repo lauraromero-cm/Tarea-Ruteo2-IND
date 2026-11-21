@@ -34,6 +34,6 @@ else
 fi
 
 # --- 4. Serve ---
-echo "=== Starting web server on http://0.0.0.0:${PORT} ==="
 PORT="${APP_PORT:-5000}"
+echo "=== Starting web server on http://0.0.0.0:${PORT} ==="
 exec python3 main.py serve --host 0.0.0.0 --port "$PORT"

@@ -19,7 +19,10 @@ CREATE TABLE edges (
     cost      double precision,          -- largo en metros (costo de ruteo)
     reverse_cost double precision,
     source    integer,
-    target    integer
+    target    integer,
+    -- Probabilidad de falla del enlace: 0 POR DEFECTO (sin evento sismico).
+    -- 05_modelo_falla.sql la actualiza con el modelo GMPE + fragilidad.
+    p_fail    double precision NOT NULL DEFAULT 0
 );
 
 -- Volcamos cada capa (MultiLineString -> LineString con ST_Dump)

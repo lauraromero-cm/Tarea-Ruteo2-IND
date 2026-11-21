@@ -1,7 +1,10 @@
 -- 04_sismo.sql
--- Carga del epicentro del terremoto M8.8 Maule (2010-02-27), obtenido del
--- catalogo USGS en formato GeoJSON (data/sismo_maule_2010.geojson).
--- El GeoJSON completo tambien se carga como registro para trazabilidad.
+-- Tablas del epicentro del terremoto M8.8 Maule (2010-02-27).
+-- Las coordenadas NO se escriben a mano: se cargan PARSEANDO el GeoJSON del
+-- catalogo USGS (data/sismo_maule_2010.geojson, evento
+-- official20100227063411530_30). main.py inserta el GeoJSON crudo en la tabla
+-- staging 'sismo_geojson' y 04b_sismo_extract.sql extrae los campos con
+-- operadores jsonb y la geometria con ST_GeomFromGeoJSON (PostGIS).
 
 DROP TABLE IF EXISTS sismo CASCADE;
 CREATE TABLE sismo (
@@ -15,9 +18,7 @@ CREATE TABLE sismo (
     geom      geometry(Point,4326)
 );
 
-INSERT INTO sismo (id, lugar, mag, depth_km, fecha_utc, lon, lat, geom) VALUES
- ('official20100227063411530_30', '2010 Maule, Chile Earthquake',
-  8.8, 22.9, '2010-02-27 06:34:11.530+00', -72.898, -36.122,
-  ST_SetSRID(ST_MakePoint(-72.898,-36.122),4326));
-
-CREATE INDEX sismo_geom_gix ON sismo USING gist (geom);
+-- Tabla staging: recibe el GeoJSON crudo tal como viene del USGS (lo carga
+-- main.py leyendo el archivo; no se transcribe ningun valor a mano).
+DROP TABLE IF EXISTS sismo_geojson CASCADE;
+CREATE TABLE sismo_geojson (doc jsonb);

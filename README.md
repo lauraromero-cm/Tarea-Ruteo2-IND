@@ -2,9 +2,10 @@
 
 Modelo de red de la infraestructura de fibra óptica chilena (datos SUBTEL/NIC,
 proyecto *Yafún* / estudio CORFO 15BPE-47225) sobre **PostgreSQL + PostGIS +
-pgRouting**, con cálculo del **ATTR** (All-Terminal Reliability) de los nodos
-clave antes y después del terremoto **M8.8 del Maule (2010)**, y visualización
-web en **Leaflet**.
+pgRouting**, con cálculo del **ATTR** (*Average Two-Terminal Reliability*,
+fiabilidad promedio de dos terminales; Boettcher et al., IEEE 2018) de la red
+antes y después del terremoto **M8.8 del Maule (2010)**, y visualización web en
+**Leaflet**.
 
 ## Requisitos
 
@@ -22,99 +23,129 @@ web en **Leaflet**.
 | `shp/trayecto_en_ferry.*` | Enlaces marítimos en ferry (operación) |
 | `sismo_maule_2010.geojson` | Sismo M8.8 Maule, descargado de **USGS** |
 
-## Uso rápido (Docker) — recomendado
+## Dos formas de ejecutar (elige una)
 
-```bash
-docker compose up --build
-# Abre http://localhost:5000
-```
+| Opción | Cuándo usarla | Comando |
+|---|---|---|
+| **A. Local (`main.py`)** (recomendada) | Tienes PostgreSQL+PostGIS+pgRouting | `python3 main.py all` (ver pasos abajo) |
+| **B. Docker** (alternativa) | No quieres instalar nada en el host | `docker compose up --build` |
 
-Esto levanta PostgreSQL + PostGIS + pgRouting, construye la BD, calcula el ATTR
-y sirve el mapa web, todo en un solo contenedor. El puerto se puede cambiar con
-`APP_PORT` en `docker-compose.yml`.
+Ambas construyen la BD, calculan los ATTR (antes y después) y levantan el mapa
+en `http://localhost:5000`. **La vía recomendada y verificada es `main.py`**: un
+solo comando reconstruye todo desde cero y reproduce los valores del informe.
 
-Esta es la forma más simple y portable de compilar el proyecto: el contenedor
-crea su propio PostgreSQL con autenticación `trust` (sin contraseña) y corre
-automáticamente `main.py initdb` + `main.py attr` + `main.py serve`, sin
-depender de qué tenga instalado o configurado el host. Use la sección
-siguiente ("sin Docker") solo si no puede usar Docker.
-
-> Si el host ya tiene un PostgreSQL propio corriendo en el puerto 5432 (por
-> ejemplo, una instalación nativa para la sección "sin Docker"), no hay
-> conflicto: el contenedor solo expone el puerto web (`APP_PORT`, 5000 por
-> defecto) y su PostgreSQL interno queda aislado dentro del contenedor.
-
-## Uso local (sin Docker)
+## Opción A — Local con `main.py` (recomendada)
 
 Pensado para una instalación nativa de PostgreSQL (ej. Debian/Kali: paquetes
 `postgresql`, `postgresql-postgis`, `postgresql-<version>-pgrouting`).
+**Copia y pega el bloque completo** (ajusta host/puerto solo si tu instalación
+difiere):
 
 ```bash
-# 1) instalar dependencias del sistema (Debian/Kali/Ubuntu)
-sudo apt install postgresql postgresql-postgis postgresql-pgrouting
+# 1) dependencias del sistema (Debian/Kali/Ubuntu)
+sudo apt install -y postgresql postgresql-postgis postgresql-pgrouting
 
-# 2) levantar el servicio (si no está corriendo)
+# 2) levantar el servicio
 sudo service postgresql start
-pg_lsclusters              # confirma el puerto del cluster (por defecto 5432)
 
-# 3) definir una contraseña para el rol postgres (una sola vez por instalación)
+# 3) contraseña para el rol postgres (una sola vez por instalación)
 sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
 
-# 4) instalar dependencias de Python
+# 4) dependencias de Python
 pip install -r requirements.txt
 
-# 5) configurar conexión (ajuste host/puerto si su instalación difiere)
-export RESIL_DSN="host=localhost port=5432 user=postgres password=postgres dbname=resiliencia"
-export RESIL_ADMIN_DSN="host=localhost port=5432 user=postgres password=postgres dbname=postgres"
-
-# Todo de corrido:
-python main.py all           # initdb + attr + serve
-
-# O paso a paso:
-python main.py initdb        # construir la BD
-python main.py attr -n 5000  # calcular ATTR (Monte Carlo)
-python main.py serve         # mapa web en http://127.0.0.1:5000
+# 5) UN SOLO COMANDO: construye la BD, calcula el ATTR y levanta el mapa
+python3 main.py all          # initdb + attr + serve -> http://127.0.0.1:5000
 ```
 
-> Nota: `main.py` lee el password del DSN y lo pasa a `psql` vía `PGPASSWORD`
-> automáticamente; no es necesario configurar `~/.pgpass`.
+> `main.py` usa por defecto `host=localhost port=5432 user=postgres
+> password=postgres dbname=resiliencia`, de modo que `python3 main.py all`
+> funciona sin exportar nada. Si tu instalación difiere (otro puerto, host o
+> contraseña), exporta `RESIL_DSN` y `RESIL_ADMIN_DSN` antes. El password del
+> DSN se pasa a `psql` vía `PGPASSWORD` automáticamente.
+
+Alternativa paso a paso (equivalente al `all`):
+
+```bash
+python3 main.py initdb        # construir la BD (topología + sismo + modelo)
+python3 main.py attr -n 5000  # calcular ATTR (Monte Carlo)
+python3 main.py serve         # mapa web en http://127.0.0.1:5000
+```
+
+## Cargar solo `main.sql` (entregable autocontenido)
+
+`main.sql` es **autocontenido**: carga en una **base de datos vacía** toda la
+infraestructura (topología de red con geometría) junto con la **probabilidad de
+falla `p_fail` de cada enlace** ante el sismo M8.8. No requiere los shapefiles
+ni ejecutar `main.py`:
+
+```bash
+createdb -h localhost -p 5432 -U postgres resiliencia_main
+psql     -h localhost -p 5432 -U postgres -d resiliencia_main -f main.sql
+```
+
+Incluye las extensiones (PostGIS + pgRouting), las funciones del modelo de falla
+(`norm_cdf`, `pga_campbell`) y las tablas `edges`, `edges_vertices_pgr`,
+`nodos_clave`, `sismo`, `modelo_param` y `edge_failure` con sus datos.
+
+## Opción B — Docker (alternativa)
+
+Se incluye además un `Dockerfile` + `docker-compose.yml` que empaquetan
+PostgreSQL + PostGIS + pgRouting + Flask en un contenedor con autenticación
+`trust`:
+
+```bash
+docker compose up --build        # -> http://localhost:5000
+```
+
+La **vía soportada y verificada es la Opción A (`main.py`)**; el contenedor se
+ofrece solo como empaquetado alternativo de las mismas dependencias.
 
 ## Estructura
 
 ```
 codigo-t2/
 ├── main.py                 Orquestador (initdb / attr / serve / all)
-├── main.sql                Probabilidades de falla por enlace (entregable)
+├── main.sql                Entregable autocontenido: infraestructura +
+│                           probabilidades de falla, carga en BD vacía
 ├── requirements.txt        Dependencias Python
 ├── Dockerfile              Imagen Docker (PG17 + PostGIS + pgRouting + Flask)
 ├── docker-compose.yml      Un solo comando: docker compose up --build
 ├── docker-entrypoint.sh    Script de entrada del contenedor
-├── .dockerignore           Exclusiones para el build
 ├── sql/
 │   ├── 00_pgr_createtopology_compat.sql  Compat. pgr_createTopology para pgRouting 4.x
 │   ├── 01_carga.sql          Extensiones PostGIS + pgRouting
 │   ├── 02_topologia.sql      Tabla edges + pgr_createTopology
 │   ├── 03_nodos_clave.sql    Nodos que generan/intercambian/reciben información
-│   ├── 04_sismo.sql          Epicentro M8.8
+│   ├── 04_sismo.sql          Tabla sismo + staging GeoJSON
+│   ├── 04b_sismo_extract.sql Extrae epicentro desde GeoJSON (ST_GeomFromGeoJSON)
 │   └── 05_modelo_falla.sql   GMPE Campbell(1981) + fragilidad lognormal HAZUS
 ├── scripts/
-│   └── attr.py               ATTR (All-Terminal Reliability) Monte Carlo
+│   └── attr.py               ATTR (Average Two-Terminal Reliability) Monte Carlo
 ├── templates/
 │   └── index.html            Mapa Leaflet
 ├── data/
 │   ├── shp/                  Shapefiles de infraestructura (fibra, postación, camino, ferry)
 │   └── sismo_maule_2010.geojson
+├── material/                 Material de referencia (estudios CORFO/SUBTEL)
 └── docs/
-    └── INFORME.md            Informe: metodología, decisiones y resultados
+    └── informe-final.tex     Informe LaTeX (entregable)
 ```
 
 ## Resultado (resumen)
 
 - Red de fibra en operación: **2.119 enlaces**, red **fragmentada** (la mayor
   componente conexa es ~11–17% de los nodos, coincidiendo con el estudio).
-- **ATTR estricto = 0** (los 19 nodos clave no están todos en una misma
-  componente ⇒ la red no es resiliente ya en operación).
-- Indicador graduado (conectividad de pares de nodos clave): **0.047 antes →
-  0.042 después** del sismo, es decir una **caída ~11%** por el terremoto.
+- **ATTR** = *Average Two-Terminal Reliability*: fracción promedio de pares de
+  nodos que siguen conectados tras las fallas (definición de Boettcher et al.,
+  IEEE 2018, ec. 8).
+- **ATTR de la red** (promedio ponderado del ATTR de cada sub-red operativa):
+  **1,00 → 0,87 tras el M8.8 (−13%)**. Las sub-redes del epicentro son las que
+  más caen: **Talca** conserva solo 17% de sus pares conectados y
+  **Concepción–Chillán** 43%; las lejanas (norte y sur) quedan intactas.
+- **ATTR dos terminales entre los 19 nodos clave:** **0,047 → 0,042** (−11%).
+- **ATTR estricto (all-terminal) = 0** ya en operación (los 19 nodos clave no
+  están todos en una misma componente ⇒ la red no es resiliente ni sin sismo).
 
-# Tarea-Ruteo2-IND
+Detalle completo de metodología, parámetros y referencias en
+[`docs/informe-final.tex`](docs/informe-final.tex).
