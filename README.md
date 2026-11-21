@@ -36,41 +36,44 @@ solo comando reconstruye todo desde cero y reproduce los valores del informe.
 
 ## Opción A — Local con `main.py` (recomendada)
 
-Pensado para una instalación nativa de PostgreSQL (ej. Debian/Kali: paquetes
-`postgresql`, `postgresql-postgis`, `postgresql-<version>-pgrouting`).
-**Copia y pega el bloque completo** (ajusta host/puerto solo si tu instalación
-difiere):
+El proyecto se reproduce desde un **clon limpio** del repositorio con un solo
+comando, siguiendo estos prerequisitos:
 
 ```bash
-# 1) dependencias del sistema (Debian/Kali/Ubuntu)
-sudo apt install -y postgresql postgresql-postgis postgresql-pgrouting
-
-# 2) levantar el servicio
+# Prerequisitos (una vez):
+sudo apt install -y postgresql postgresql-postgis \
+     postgresql-pgrouting
 sudo service postgresql start
-
-# 3) contraseña para el rol postgres (una sola vez por instalación)
 sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'postgres';"
+pip install -r requirements.txt   # psycopg2, flask
 
-# 4) dependencias de Python
-pip install -r requirements.txt
-
-# 5) UN SOLO COMANDO: construye la BD, calcula el ATTR y levanta el mapa
-python3 main.py all          # initdb + attr + serve -> http://127.0.0.1:5000
+# UN SOLO COMANDO: construye todo y levanta el mapa
+python3 main.py all
 ```
 
-> `main.py` usa por defecto `host=localhost port=5432 user=postgres
-> password=postgres dbname=resiliencia`, de modo que `python3 main.py all`
-> funciona sin exportar nada. Si tu instalación difiere (otro puerto, host o
-> contraseña), exporta `RESIL_DSN` y `RESIL_ADMIN_DSN` antes. El password del
-> DSN se pasa a `psql` vía `PGPASSWORD` automáticamente.
+El subcomando `all` ejecuta secuencialmente:
 
-Alternativa paso a paso (equivalente al `all`):
+1. **`initdb`** — crea la base de datos `resiliencia`, carga las extensiones
+   (PostGIS, pgRouting), importa los 4 shapefiles con `shp2pgsql`, construye
+   la topología (`pgr_createTopology`), identifica los 19 nodos clave, carga
+   el epicentro **parseando** el GeoJSON del USGS (`ST_GeomFromGeoJSON`) y
+   aplica el modelo de falla (GMPE Campbell + fragilidad HAZUS) para obtener
+   la probabilidad de falla de cada enlace.
+2. **`attr -n 5000`** — calcula el ATTR (dos terminales, Monte Carlo) antes y
+   después del sismo; guarda los resultados en la BD.
+3. **`serve`** — levanta el servidor Flask con el mapa Leaflet en
+   `http://127.0.0.1:5000`.
 
-```bash
-python3 main.py initdb        # construir la BD (topología + sismo + modelo)
-python3 main.py attr -n 5000  # calcular ATTR (Monte Carlo)
-python3 main.py serve         # mapa web en http://127.0.0.1:5000
-```
+Las dependencias de Python están declaradas en `requirements.txt`
+(`psycopg2-binary`, `flask`). Las dependencias del sistema (PostgreSQL,
+PostGIS, pgRouting, `shp2pgsql`) son paquetes estándar de Debian/Ubuntu/Kali.
+
+El DSN por defecto (`host=localhost port=5432 user=postgres password=postgres`)
+permite que `python3 main.py all` funcione sin exportar variables de entorno;
+si la instalación difiere, se configuran `RESIL_DSN` y `RESIL_ADMIN_DSN`.
+
+Los valores que produce el script son **deterministas** (semilla fija por
+componente) y coinciden con los reportados en el informe.
 
 ## Cargar solo `main.sql` (entregable autocontenido)
 
@@ -90,16 +93,21 @@ Incluye las extensiones (PostGIS + pgRouting), las funciones del modelo de falla
 
 ## Opción B — Docker (alternativa)
 
-Se incluye además un `Dockerfile` + `docker-compose.yml` que empaquetan
-PostgreSQL + PostGIS + pgRouting + Flask en un contenedor con autenticación
-`trust`:
+Para garantizar la reproducibilidad del proyecto, se construyó un entorno
+Docker que ejecuta todo el pipeline — desde la inicialización de la base de
+datos hasta la visualización web — con un solo comando:
 
 ```bash
-docker compose up --build        # -> http://localhost:5000
+sudo docker compose up --build
 ```
 
-La **vía soportada y verificada es la Opción A (`main.py`)**; el contenedor se
-ofrece solo como empaquetado alternativo de las mismas dependencias.
+La solución emplea un enfoque de **contenedor único** basado en la imagen
+`postgres:17-bookworm`, sobre la cual se instalan PostGIS 3, pgRouting y un
+entorno virtual Python con Flask. Un script de entrada
+(`docker-entrypoint.sh`) orquesta la secuencia completa: inicializa el clúster
+PostgreSQL, construye la base de datos invocando `main.py initdb`, calcula el
+ATTR mediante Monte Carlo (`main.py attr -n 5000`) y finalmente levanta el
+servidor Flask en `http://localhost:5000`.
 
 ## Estructura
 
